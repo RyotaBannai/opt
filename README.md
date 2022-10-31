@@ -1,1 +1,13 @@
 # the-py-optbook
+- Python で始める数理最適化 - ケーススタティでモデリングのスキルを身につけよう　のソースコードとメモです.
+  - データ: https://github.com/ohmsha/PyOptBook
+- poetry は公式のdocsを参考にしよう. https://python-poetry.org/docs/basic-usage/
+  - poetry.lock はintel/m1 で依存バージョンが科学計算系のライブラリで異なることがあるから管理しない.
+  - package を追加. `poetry add pandas`
+- フォーマッター: black,isort
+- リンター: flake8, mypy
+- 参考: https://kamatimaru.hatenablog.com/entry/2020/05/04/224543
+- IDE は vscode で、jupyternote book に内部的に変換してくれる機能を使う. https://qiita.com/386jp/items/f023de9457c99b964a85
+  - `#%%` でコードブロックを作る.
+    - この方法で作った python ファイルは ipynb に変化する package を使えばそのまま共有できる. https://pypi.org/project/ipynb-py-convert/
+  - dataspell も気になっている.
