@@ -25,7 +25,7 @@ problem: pulp.LpProblem = pulp.LpProblem(name="LP2", sense=pulp.LpMaximize)
 # val は辞書だから、変数名をkey にして、LpVariable を一つずつループで定義してもok
 
 # 今回はKg を求めるから、Cotinuous で良いが、個数の場合は「整数計画問題」となるから、cat="Integer" とする.
-xs: pulp.LpVariable = pulp.LpVariable.dict(name="x", indices=ps, cat="Continuous")
+xs: dict = pulp.LpVariable.dict(name="x", indices=ps, cat="Continuous")
 # 制約式
 # 全ての製品の製造量は 0 以上
 for p in ps:

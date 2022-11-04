@@ -8,6 +8,6 @@
 - リンター: flake8, mypy
 - 参考: https://kamatimaru.hatenablog.com/entry/2020/05/04/224543
 - IDE は vscode で、jupyternote book に内部的に変換してくれる機能を使う. https://qiita.com/386jp/items/f023de9457c99b964a85
-  - `#%%` でコードブロックを作る.
+  - `# %%` でコードブロックを作る.
     - この方法で作った python ファイルは ipynb に変化する package を使えばそのまま共有できる. https://pypi.org/project/ipynb-py-convert/
   - dataspell も気になっている.
