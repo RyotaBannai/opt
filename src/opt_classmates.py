@@ -40,7 +40,7 @@ pair_df = pd.read_csv(data_dir / "student_pairs.csv")
 
 # %%
 
-# 今回はsenseには目的関数を最小化or最大化するかを指定する. 問題に目的関数がない場合はどちらでも良い.
+# senseには目的関数を最小化or最大化するかを指定する. 今回はm問題に目的関数がない場合はどちらでも良い.
 cs = ["A", "B", "C", "D", "E", "F", "G", "H"]
 ss = student_df["student_id"].tolist()
 sc = [(s, c) for s in ss for c in cs]  # クラスと生徒の全組み合わせ
@@ -75,6 +75,23 @@ for c in cs:
         [xs[s, c] * scores[s] for s in ss]
     )
 
+# このままでは、学力平均は均等になるが、クラスの中の学生それぞれの学力の分布には隔たりができてしまう。そのため、初めに初めに学力分布が均等になるようにクラスを編成し、そのクラス編成をもとに、それぞれの制約を満たすような組み分けを考える.
+student_df["score_rank"] = student_df["score"].rank(ascending=False, method="first")
+# 単純に学力テストのランキングの１位から順にクラスA~H に割り当てていく.
+class_dict = {i: x for (i, x) in enumerate(cs)}
+student_df["init_assigned_class"] = student_df["score_rank"].map(
+    lambda rank_num: class_dict[(rank_num - 1) % 8]
+)
+init_flag = {(s, c): 0 for (s, c) in sc}
+for row in student_df.itertuples():
+    init_flag[(row.student_id, row.init_assigned_class)] = 1
+
+# debug クラスに均等に生徒がアサインされているかどうか確認
+# for c in cs:
+#   print(len(student_df[student_df['init_assigned_class'] == c]))
+# 初期の学力分布が考慮されたクラス編成の生徒のアサインと一致しているほど良いとする目的関数をセット
+problem += pulp.lpSum([xs[s, c] * init_flag[s, c] for s, c in sc])
+
 # リーダーは各クラス２人以上
 leaders = {row.student_id: row.leader_flag for row in student_df.itertuples()}
 for c in cs:
@@ -89,6 +106,16 @@ for c in cs:
 for c in cs:
     for row in pair_df.itertuples():
         problem += pulp.lpSum([xs[s, c] for s in [row.student_id1, row.student_id2]]) <= 1
+
+
+# 生徒番号１をクラスA に必ず割り当てたい.
+must_students = {(s, c): 0 for (s, c) in sc}
+must_students[1, "A"] = 1
+for c in cs:
+    problem += pulp.lpSum([xs[(s, c)] for s in ss if must_students[s, c] == 1]) == len(
+        [1 for s in ss if must_students[s, c] == 1]
+    )
+
 
 status = problem.solve()
 print(status)  # 解が存在した場合は1(Solved)、そうでない場合は0(Not Solved)、そもそも問題にかいが存在しない場合には-1(Infeasible)
@@ -117,6 +144,23 @@ result_df["assigned_class"] = result_df["student_id"].map(s2c)
 # for row in pair_df.itertuples():
 #     print(row.student_id1, s2c[row.student_id1])
 #     print(row.student_id2, s2c[row.student_id2])
+
+# 初期のクラス編成で、学力テストに偏りがないことをチェック
+init_class_df = student_df.copy()
+fig = plt.figure(figsize=(12, 20))
+for i, c in enumerate(cs):
+    cls_df = init_class_df[init_class_df["init_assigned_class"] == c]
+    ax = fig.add_subplot(
+        4,
+        2,
+        i + 1,
+        xlabel="score",
+        ylabel="num",
+        xlim=(0, 500),
+        ylim=(0, 20),
+        title="Class :{:s}".format(c),
+    )
+    ax.hist(cls_df["score"], bins=range(0, 500, 40))
 
 # クラスごとの学力テストの結果の分布をグラフ化
 fig = plt.figure(figsize=(12, 20))
