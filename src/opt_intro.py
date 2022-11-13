@@ -1,6 +1,9 @@
-# %%
-# 連立一次方程式を解く
+"""
+連立一次方程式を解く
 
+TODO: 目的を書く
+"""
+# %%
 from pprint import pprint
 
 import pulp

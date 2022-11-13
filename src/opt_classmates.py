@@ -20,6 +20,9 @@ Tips:
   - 点数の平均 describe(), hist()
   - フラグ
   - 想定したデータ数あるかどうか、など
+
+TODO: 目的を書く
+
 """
 
 # %%
@@ -75,7 +78,8 @@ for c in cs:
         [xs[s, c] * scores[s] for s in ss]
     )
 
-# このままでは、学力平均は均等になるが、クラスの中の学生それぞれの学力の分布には隔たりができてしまう。そのため、初めに初めに学力分布が均等になるようにクラスを編成し、そのクラス編成をもとに、それぞれの制約を満たすような組み分けを考える.
+# このままでは、学力平均は均等になるが、クラスの中の学生それぞれの学力の分布には隔たりができてしまう。
+# そのため、初めに初めに学力分布が均等になるようにクラスを編成し、そのクラス編成をもとに、それぞれの制約を満たすような組み分けを考える.
 student_df["score_rank"] = student_df["score"].rank(ascending=False, method="first")
 # 単純に学力テストのランキングの１位から順にクラスA~H に割り当てていく.
 class_dict = {i: x for (i, x) in enumerate(cs)}
@@ -118,7 +122,10 @@ for c in cs:
 
 
 status = problem.solve()
-print(status)  # 解が存在した場合は1(Solved)、そうでない場合は0(Not Solved)、そもそも問題にかいが存在しない場合には-1(Infeasible)
+# 解が存在した場合は1(Solved)
+# そうでない場合は0(Not Solved)
+# そもそも問題に解が存在しない場合には-1(Infeasible)
+print(status)
 print(pulp.LpStatus[status])
 
 c2s = {}
