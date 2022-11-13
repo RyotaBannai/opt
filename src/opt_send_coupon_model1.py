@@ -1,4 +1,8 @@
 """
+会員個別送付モデル
+- 会員とDm をキーにした決定変数を定義してモデリングする
+- 各会員にダイレクトメールを送るか送らないかを決定するモデル
+
 目的：
 割引クーポン付与による来客増加数の最大化
 
@@ -34,8 +38,8 @@ customer_df = pd.read_csv(data_dir / "customers.csv")
 prob_df = pd.read_csv(data_dir / "visit_probability.csv")
 
 # %%
-# 年齢区分と昨年度来店回数区分の組み合わせの人数について確認.
-# どの年齢区分のお客さんが昨年どれくらい来店してるかをみる
+# 年齢区分と昨年度の来店回数区分の組み合わせの人数について確認.
+# どの年齢区分の会員が昨年どれくらい来店したかを見る
 # pivot_table の index は row
 customer_pivot_df = pd.pivot_table(
     data=customer_df, values="customer_id", columns="freq_cat", index="age_cat", aggfunc="count"
@@ -56,7 +60,6 @@ for i, ptn in enumerate(["prob_dm1", "prob_dm2", "prob_dm3"]):
 plt.show()
 
 # %%
-# 会員個別送付モデル：各会員にダイレクトメールを送るか送らないかを決定するモデル
 problem = pulp.LpProblem(name="DiscountCouponProblem1", sense=pulp.LpMaximize)
 customer_ids = customer_df["customer_id"].to_list()
 dms = {"prob_dm1": 1, "prob_dm2": 2, "prob_dm3": 3}
@@ -147,6 +150,3 @@ for i, ptn in enumerate(dms.keys()):
     )
     ax[i].set_title("{}_rate".format(ptn))
 plt.show()
-# %%
-
-# %%
