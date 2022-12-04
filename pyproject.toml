@@ -22,6 +22,7 @@ flake8 = "^5.0.4"
 mypy = "^0.982"
 isort = "^5.10.1"
 pytest = "^7.2.0"
+scipy = "^1.9.3"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -11,3 +11,4 @@
   - `# %%` でコードブロックを作る.
     - この方法で作った python ファイルは ipynb に変化する package を使えばそのまま共有できる. https://pypi.org/project/ipynb-py-convert/
   - dataspell も気になっている.
+- エラー `Jupyter cannot be started. Error attemping to locate Jupyter` が出たら、仮想環境内で `python -m pip install jupyter notebook -U` で `jupyter` と `notebook` パッケージを install
