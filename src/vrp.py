@@ -5,7 +5,7 @@
 import os
 import sys
 from itertools import combinations_with_replacement, product
-from typing import List, Literal, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -65,7 +65,7 @@ plt.show()
 
 def simulate_route(z: List[Union[Literal[0], Literal[1]]]):
     # enumerate_routes の中でのみ用いる関数
-    # z は k_minus_o の部分集合を意味する長さ num_places の 0 または１の値のリストで、
+    # z は k_minus_o の部分集合を意味する, 長さ num_places の 0 または１の値のリストで
     # z[k]==1 (k in K) が k への訪問があることを意味する.
     if z[0] == 0:
         # 自社拠点を通らないルートは不適切なので None を返し、後段で除去する
@@ -73,7 +73,7 @@ def simulate_route(z: List[Union[Literal[0], Literal[1]]]):
 
     # 巡回セールスマン問題を解く
     daily_route_prob = pulp.LpProblem(sense=pulp.LpMinimize)
-    #  k->l へ移動の有無
+    # k->l へ移動の有無
     # LpAffineExpression は一次式としての0 を意味する.
     x = {
         (k, l): pulp.LpVariable(f"x_{k}_{l}", cat="Binary") if k != l else pulp.LpAffineExpression()
@@ -92,8 +92,6 @@ def simulate_route(z: List[Union[Literal[0], Literal[1]]]):
     # MTZ 定式化の補助変数の説明では、訪問順序であることを意識して、u[0] を変数かのように書いてあるが、
     # 実際には 0 に固定されている値だから、ここでは u[0] を辺数として定義しない.
 
-    h = pulp.LpVariable("h", lowBound=0, cat="Contunuous")
-
     # 移動の構造
     for l in K:
         daily_route_prob += pulp.lpSum([x[k, l] for k in K]) <= 1
@@ -111,13 +109,16 @@ def simulate_route(z: List[Union[Literal[0], Literal[1]]]):
     for k, l in product(K_minus_o, K_minus_o):
         daily_route_prob += u[k] + 1 <= u[l] + len(K_minus_o) * (1 - x[k, l])  # MTZ 定式化
 
+    # 移動経路での移動時間の合計を表す変数
+    h = pulp.LpVariable("h", lowBound=0, cat="Continuous")
     # 労働関係（巡回セールスマン問題にはない制約だが、これが満たされない場合実行不可能としたので追加）
     # 移動時間
     travel = pulp.lpSum([t[k, l] * x[k, l] for k, l in product(K, K)])
     daily_route_prob += (travel - H_regular) <= h
     daily_route_prob += h <= H_max_overtime
 
-    # 目的関数
+    # 目的関数.
+    # ある拠点の集合z を全て通りたい時の最短経路問題を解く.
     daily_route_prob += travel
     daily_route_prob.solve()
 
@@ -131,7 +132,10 @@ def simulate_route(z: List[Union[Literal[0], Literal[1]]]):
 
 
 def enumerate_routes():
-    # 移動時間を列挙する
+    """
+    拠点の集合z における全ての部分集合の移動時間が最短となる最短を列挙する
+    """
+
     # joblib を用いて計算並列化（16並列）して、K_minus_o の全ての部分集合に対する最短の移動経路を計算
     # これは次のコードを並列化したもの
     # routes=[]
@@ -142,7 +146,7 @@ def enumerate_routes():
     # 結果が None のもの（自社拠点を通らないもの）を除去
     routes = pd.DataFrame([x for x in routes if x is not None])
 
-    # 結果が Optimal でないもの（ここでは移動時間が長すぎて実行不能となるもの）を削除
+    # 結果が Optimal でないもの（ここでは移動時間(h)が長すぎて実行不能となるもの）を削除
     routes = routes[routes.optimal].copy()
     return routes
 
@@ -151,3 +155,144 @@ def enumerate_routes():
 routes_df = enumerate_routes()
 
 # %%
+"""
+移動経路一覧ができたら、これを用いて
+各日付について,'移動'と'配送する荷物'の両方を指定したスケジュールを列挙する.
+
+日に依存することなく、移動経路の候補が列挙できているため、実際には
+移動経路上で'配送可能な荷物の部分集合'であって、'重量制限を守れるもの'を日ごとに列挙すればよい.
+"""
+
+
+def is_OK(requests: List[int]) -> Tuple[Tuple[Optional[int], Optional[float]], bool]:
+    # 指定された荷物の配送が重量制約の元で可能かどうかを確認する
+    # 可能である場合は、配送を実行できる最短の移動経路のindex（routes_df におけるもの）とその所要時間を返す.
+    # 不可能であれば False
+    # requets: R に含まれるリストで、配送する荷物の一覧
+
+    weight = sum([w[r] for r in requests])
+    if weight > W:
+        return ((None, None), False)
+
+    best_route_index = None
+    best_hour = sys.float_info.max
+    for route_index, row in routes_df.iterrows():
+        # k[r] 荷物r の配送先
+        # row.z[k[r]] == 1, 荷物r の配送先k[r] が移動経路の含まれている経路
+        all_requests_on_route = all([row.z[k[r]] == 1 for r in requests])
+        if all_requests_on_route and row.移動時間 < best_hour:
+            best_route_index = route_index
+            best_hour = row.移動時間
+    if best_route_index is None:
+        return ((None, None), False)
+
+    return ((best_route_index, best_hour), True)
+
+
+def _enumerate_feasible_schedules(
+    requests_cands: List[int], current_index_set: List[int], index_to_add: int, res: List[Dict]
+):
+    # R に含まれるリスト requests_cands を候補として
+    # current_index_set で指定される荷物に加えて配送することができる
+    # requests_cands[index_to_add:] の部分集合を全て列強する（再帰的に計算する）
+    # 配送可能な荷物の集合は、リスト res に追加される
+    # 各再帰ごとに、index_to_add を追加する、追加しないの2 通りを試す.
+    # requesrts_cands で指数関数的に計算量が増える.
+
+    # index_set_to_check = current_index_set + [index_to_add] で指定される
+    # 荷物が配送可能かを確認する
+    index_set_to_check = current_index_set + [index_to_add]
+    next_index = index_to_add + 1
+    is_next_index_valid = next_index < len(requests_cands)
+    requests = [requests_cands[i] for i in index_set_to_check]
+    (best_route_index, best_hour), is_ok = is_OK(requests=requests)
+
+    if is_ok:
+        # index_set_to_check で指定される荷物が配送可能であれば、
+        # その配送に用いされるルートの情報を記録する
+        res.append(
+            {
+                "requests": [requests_cands[i] for i in index_set_to_check],
+                "route_idex": best_route_index,
+                "hours": best_hour,
+            }
+        )
+
+        if is_next_index_valid:
+            # さらに荷物を追加できるか確認
+            # next_index を一つ進めて、再度is_OK により最短ルートを確保できるか見る
+            _enumerate_feasible_schedules(
+                requests_cands=requests_cands,
+                current_index_set=index_set_to_check,  # index_to_add を追加した新しい set
+                index_to_add=next_index,  # ひとつ進める
+                res=res,
+            )
+
+    if is_next_index_valid:
+        # index_to_add をスキップして、next_index 以降の荷物を追加できるか確認する
+        _enumerate_feasible_schedules(
+            requests_cands=requests_cands,
+            current_index_set=current_index_set,  # index_to_add は追加せずに元の set を渡す
+            index_to_add=next_index,  # ひとつ進める
+            res=res,
+        )
+
+
+def enumerate_feasible_shecules(d: int):
+    # _enumerate_feasible_shcedules を用いて、d 日に考慮すべきスケジュールを列挙する
+
+    # 配送日指定に合うものだけを探索
+    requests_cands = [r for r in R if d_0[r] <= d <= d_1[r]]
+
+    # res にd 日の時効可能なスケジュールを格納数r
+    res = [{"requests": [], "route_index": 0, "hours": 0}]
+
+    _enumerate_feasible_schedules(
+        requests_cands=requests_cands, current_index_set=[], index_to_add=0, res=res
+    )
+
+    # res を DataFrame にして後処理に必要な値を計算する
+    feasible_schedules_df = pd.DataFrame(res)
+    feasible_schedules_df["overwork"] = (feasible_schedules_df.hours - H_regular).clip(0)
+    feasible_schedules_df["requests_set"] = feasible_schedules_df.requests.apply(set)
+
+    # feasible_schedules_df のうち、不要なスケジュールを削除
+    # あるスケジュールの集合が別のスケジュールに対して
+    #   配送する荷物の集合の包含関係での比較
+    #   残業時間の比較
+    # の二つの比較で同時に負けている場合には、そのスケジュールは利用価値がないため破棄
+
+    # 全て
+    index_cands = set(feasible_schedules_df.index)
+
+    # 破棄
+    index_inferior = set()
+
+    for i in feasible_schedules_df.index:
+        for j in feasible_schedules_df.index:
+            # 配送する荷物の集合の包含関係で比較
+            requests_strict_dominance = (
+                feasible_schedules_df.requests_set.loc[j]
+                < feasible_schedules_df.requests_set.loc[i]
+            )
+
+            # 残業時間の比較
+            overwork_weak_dominance = (
+                feasible_schedules_df.overwork.loc[j] >= feasible_schedules_df.overwork.loc[i]
+            )
+
+            if requests_strict_dominance and overwork_weak_dominance:
+                index_inferior.add(j)
+
+    # 残す
+    index_superior = index_cands - index_inferior
+    superior_feasible_shedules_df = feasible_schedules_df.loc[list(index_superior), :]
+    return superior_feasible_shedules_df
+
+
+_shedules = Parallel(n_jobs=16)([delayed(enumerate_feasible_shecules)(d) for d in D])
+feasible_schedules = dict(zip(D, _shedules))
+
+# %%
+print("1日の最大スケジュール候補数:", max(len(df) for df in feasible_schedules.values()))  # 939
+print("スケジュール候補数の合計:", sum(len(df) for df in feasible_schedules.values()))  # 8430
