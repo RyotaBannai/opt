@@ -57,6 +57,7 @@ a.scatter(_K[1:, 0], _K[1:, 1], marker="x")
 a.scatter(_K[0, 0], _K[0, 1], marker="o")
 a.set_aspect("equal")
 plt.show()
+plt.hist(w, bins=20, range=(0, 2000))
 # %%
 # 日毎にスケジュールの列挙
 # 自社拠点から指定された配送先を訪問する最短のルートを算出する
@@ -171,7 +172,7 @@ def is_OK(requests: List[int]) -> Tuple[Tuple[Optional[int], Optional[float]], b
     # requets: R に含まれるリストで、配送する荷物の一覧
 
     weight = sum([w[r] for r in requests])
-    if weight > W:
+    if weight > W:  # 枝刈り 使えない荷物の集合は考慮しない
         return ((None, None), False)
 
     best_route_index = None
@@ -213,7 +214,7 @@ def _enumerate_feasible_schedules(
         res.append(
             {
                 "requests": [requests_cands[i] for i in index_set_to_check],
-                "route_idex": best_route_index,
+                "route_index": best_route_index,
                 "hours": best_hour,
             }
         )
@@ -238,7 +239,7 @@ def _enumerate_feasible_schedules(
         )
 
 
-def enumerate_feasible_shecules(d: int):
+def enumerate_feasible_schedules(d: int):
     # _enumerate_feasible_shcedules を用いて、d 日に考慮すべきスケジュールを列挙する
 
     # 配送日指定に合うものだけを探索
@@ -290,9 +291,128 @@ def enumerate_feasible_shecules(d: int):
     return superior_feasible_shedules_df
 
 
-_shedules = Parallel(n_jobs=16)([delayed(enumerate_feasible_shecules)(d) for d in D])
+_shedules = Parallel(n_jobs=16)([delayed(enumerate_feasible_schedules)(d) for d in D])
 feasible_schedules = dict(zip(D, _shedules))
 
 # %%
 print("1日の最大スケジュール候補数:", max(len(df) for df in feasible_schedules.values()))  # 939
 print("スケジュール候補数の合計:", sum(len(df) for df in feasible_schedules.values()))  # 8430
+
+# %%
+"""
+列挙したスケジュール候補を用いて、金剛整数計画問題を解く
+"""
+prob = pulp.LpProblem(sense=pulp.LpMinimize)
+
+# 日ごとにどの配送計画（スケジュール）を採用するか
+z = {}
+for d in D:
+    for q in feasible_schedules[d].index:
+        z[d, q] = pulp.LpVariable(f"z_{d}_{q}", cat="Binary")
+
+# 配送を外注するかどうかの補助変数
+# yは連続変数だけど、制約のかけ方により必ず0/1 の Binaryとなる.（外部委託するかしないかの制約部分）
+y = {r: pulp.LpVariable(f"y_{r}", cat="Continuous", lowBound=0, upBound=1) for r in R}
+
+# 荷物r の配送の回数をy,z の言葉で表しておく
+deliv_count = {r: pulp.LpAffineExpression() for r in R}
+for d in D:
+    for q in feasible_schedules[d].index:
+        for r in feasible_schedules[d].loc[q].requests:
+            deliv_count[r] += z[d, q]  # スケジュールが採用されれば、荷物r の配達先が配達経路上にある回数が１つ増える
+
+# 日付d の残業時間をy,z の言葉で表しておく
+h = {
+    d: pulp.lpSum(
+        z[d, q] * feasible_schedules[d].overwork.loc[q] for q in feasible_schedules[d].index
+    )
+    for d in D
+}
+
+# 制約
+# 一日ひとつのスケジュールを選択
+for d in D:
+    prob += pulp.lpSum(z[d, q] for q in feasible_schedules[d].index) == 1
+
+# y が外部委託による配送を表すように、荷物r の配達回数が 0なら y >=1になるよう設定（yが1==外部委託によって配達される）
+for r in R:
+    prob += y[r] >= 1 - deliv_count[r]
+
+# 目的関数
+obj_overtime = pulp.lpSum([c * h[d] for d in D])
+obj_outsoarcing = pulp.lpSum([f[r] * y[r] for r in R])
+obj_total = obj_overtime + obj_outsoarcing
+prob += obj_total
+
+prob.solve()
+# %%
+"""
+日毎に可視化
+"""
+
+
+def visualize_route(d: int):
+    for q in feasible_schedules[d].index:
+        if z[d, q].value() == 1:
+            route_summary = feasible_schedules[d].loc[q]
+            route_geography = routes_df.loc[route_summary.route_index]
+            break
+
+    # 背景
+    a = plt.subplot()
+    a.scatter(_K[1:, 0], _K[1:, 1], marker="x")
+    a.scatter(_K[0, 0], _K[0, 1], marker="o")
+
+    # 移動経路
+    # 元々 routes_df で日毎の移動経路を固定して決めているから、それに従ってk->l 間の移動を整理しているだけ.
+    # 計算時は、KxK のproduct を使って全点間を考慮しているから、0 の変数が多い（はず）
+    moves = [(k_from, k_to) for (k_from, k_to), used in route_geography.route.items() if used == 1]
+    # moves
+    # [(0, 7), (4, 0), (7, 9), (9, 4)]
+    for k_from, k_to in moves:
+        p_from = _K[int(k_from)]
+        p_to = _K[int(k_to)]
+        a.arrow(
+            *p_from,
+            *(p_to - p_from),
+            head_width=3,
+            length_includes_head=True,
+            overhang=0.5,
+            color="gray",
+            alpha=0.5,
+        )
+
+        # requests は荷物の集合
+        requests_at_k_to = [r for r in route_summary.requests if k[r] == k_to]
+        a.text(*p_to, "".join([str(r) for r in requests_at_k_to]))
+    plt.title(f"Schedule for day: {d}")
+    plt.show()
+
+
+# 0 日目のスケジュール
+visualize_route(d=0)
+# for d in D:
+# visualize_route(d=d)
+
+requests_summary_df = pd.DataFrame(
+    [
+        {
+            "outsourced": y[r].value(),
+            "weight": w[r],
+            "freight": f[r],  # 外部委託コスト
+            "location": k[r],
+            "distance_from_o": t[k[r], o],
+        }
+        for r in R
+    ]
+)
+requests_summary_df.groupby("outsourced")[["weight", "freight", "distance_from_o"]].agg("mean")
+# 外注した荷物とそうでない荷物の特徴を確認
+#       weight	freight	distance_from_o
+# outsourced
+# 0.0	1012.845455	48718.181818	106.609091
+# 1.0	955.200000	45080.000000	121.700000
+requests_summary_df.plot.scatter(x="distance_from_o", y="freight", c="outsourced", cmap="cool")
+plt.show()
+
+# %%
