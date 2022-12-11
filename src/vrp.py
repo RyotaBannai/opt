@@ -2,17 +2,18 @@
 コストを最小化する輸送車両の配送計画
 """
 # %%
-import os
+# import os
 import sys
-from itertools import combinations_with_replacement, product
+from itertools import product
 from typing import Dict, List, Literal, Optional, Tuple, Union
 
-import matplotlib as mpl
+# import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pulp
-from IPython.core.display import display
+
+# from IPython.core.display import display
 from joblib import Parallel, delayed
 
 # %%
