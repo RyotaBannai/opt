@@ -205,6 +205,58 @@ for r in R:
         h_list.append(0)  # 右辺の定数項 0
 
 
+# %%
+"""
+Recency に関する凸性（下に凸）: 過去に閲覧すればするほど、再閲覧確率の下降幅は逓減する
+Frequency に関する凸性（上に凸）: 閲覧数が増えれば増えるほど、再閲覧確率の増加幅は逓減する
+
+実装要件が前後逆になるが..
+モデルブラッシュアップ最終項.p278 あたり
+"""
+# Recency について
+rec_df["prob"].diff().plot.bar()
+rec_df["prob"].diff().plot
+# %%
+# Frequency について
+freq_df["prob"].diff().plot.bar()
+freq_df["prob"].diff().plot
+
+# %%
+# 凸性
+# prob_pred[r+1,f] - prob_pred[r,f] <= prob_pred[r+2,f] - prob_pred[r,f]
+# - prob_pred[r,f] + 2 * prob_pred[r+1,f] - prob_pred[r+2,f] <= 0
+# 凸二次計画問題の制約式の右辺は定数にする
+for r in R[:-2]:
+    for f in F:
+        idx1 = RF2Idx[r, f]
+        idx2 = RF2Idx[r + 1, f]
+        idx3 = RF2Idx[r + 2, f]
+        G_row = var_vec[:]
+        G_row[idx1] = -1
+        G_row[idx2] = 2
+        G_row[idx3] = -1
+        G_list.append(G_row)
+        h_list.append(0)
+
+
+# 凹性
+# prob_pred[r,f+1] - prob_pred[r,f] =< prob_pred[r,f+2] - prob_pred[r,f+1]
+# - prob_pred[r,f] + 2 * prob_pred[r,f+1] - prob_pred[r,f+1] =< 0
+# prob_pred[r,f] - 2 * prob_pred[r,f+1] + prob_pred[r,f+1] <= 0
+# 「右辺以下」となるようにする
+for r in R:
+    for f in F[:-2]:
+        idx1 = RF2Idx[r, f]
+        idx2 = RF2Idx[r, f + 1]
+        idx3 = RF2Idx[r, f + 2]
+        G_row = var_vec[:]
+        G_row[idx1] = 1
+        G_row[idx2] = -2
+        G_row[idx3] = 1
+        G_list.append(G_row)
+        h_list.append(0)
+
+
 # 4) pred_prob と prob の二乗誤差を後見すうの重み付きで最小化する
 
 P_list = []  # 目的関数の変数の２次の項の係数行列を作るためのリスト
@@ -266,6 +318,7 @@ ax.plot_wireframe(X, Y, Z)
 
 # %%
 # サンプルデータで再閲覧確率を推定
+# どの組み合わせの場合に確率が高いのか判断がつかない場合で一目瞭然となる.
 Rows4 = [
     ("item1", 1, 6),
     ("item2", 2, 2),
@@ -274,5 +327,3 @@ Rows4 = [
 ]
 sample_df = pd.DataFrame(Rows4, columns=["item_name", "rec", "freq"])
 pd.merge(sample_df, rf_df, on=["rec", "freq"])
-
-# %%
