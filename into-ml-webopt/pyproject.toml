@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "src"
+version = "0.1.0"
+description = ""
+authors = ["RyotaBannai <ryotala0528@gmail.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+numpy = "1.19.0"
+matplotlib = "3.6.0"
+seaborn = "^0.12.1"
+black = "^22.10.0"
+flake8 = "^5.0.4"
+mypy = "^0.982"
+isort = "^5.10.1"
+pytest = "^7.2.0"
+pymc3 = "3.11"
+arviz = "0.12.0"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.17.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100 # override black's default line-length
+exclude = '''
+/(
+  \.git
+  | \.mypy_cache
+  | \.tox
+  | venv
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+# make it compatible with black
+profile = "black"
