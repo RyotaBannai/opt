@@ -1,47 +1,20 @@
 # %%
-from abc import ABC, abstractstaticmethod
-from typing import Type
+
+import pathlib
+import sys
 
 import numpy as np
 from matplotlib import pyplot as plt
 
+src = str((pathlib.Path(__file__).parent / "..").resolve())
+sys.path.append(src)
+
+from common import EnvBernoulli, GreedyAgent, sim
+
 # %%
+
 np.random.seed(0)
 n_arms = 4
-
-
-# エージェントが探索する環境
-class Env:
-    thetas = [0.1, 0.2, 0.3, 0.4]
-
-    # エージェントの探索に対する環境の反応（どんな報酬を返すか）
-    @classmethod
-    def react(cls, arm: int):
-        if arm >= len(cls.thetas):
-            raise Exception(f"アームのindex over flow. {len(cls.thetas)-1} 以下.")
-        return 1 if np.random.random() < Env.thetas[arm] else 0
-
-    # 環境における適解（エージェントは知り得ない）
-    @classmethod
-    def opt(cls):
-        return np.argmax(cls.thetas)
-
-
-class Agent(ABC):
-    @abstractstaticmethod
-    def get_arm(self):
-        pass
-
-    @abstractstaticmethod
-    def sample(self, arm: int, reward: int):
-        pass
-
-
-class GreedyAgent(Agent):
-    # 環境との相互作用結果をもとに自身の経験を更新
-    def sample(self, arm, reward):
-        self.counts[arm] += 1
-        self.values[arm] = ((self.values[arm] * (self.counts[arm] - 1)) + reward) / self.counts[arm]
 
 
 class EpsilonGreedyAgent(GreedyAgent):
@@ -103,35 +76,15 @@ class AnnealingSoftmaxAgent(GreedyAgent):
         return arm
 
 
-# シミュレーション
-# N シミュレーションを実行
-# 1 回のシミュレーションで実行するアクション回数
-# Type[ClassName] でclass を引き受ける.ClassName にするとインスタンスを期待する.
-def sim(agent: Type[Agent], N=1000, T=1000, **kwargs):
-    selected_arms = [[0 for _ in range(T)] for _ in range(N)]
-    earned_rewards = [[0 for _ in range(T)] for _ in range(N)]
-
-    for n in range(N):
-        # 1のシミュレーション
-        a = agent(**kwargs)
-        for t in range(T):
-            arm = a.get_arm()
-            reward = Env.react(arm)
-            a.sample(arm, reward)
-            selected_arms[n][t] = arm
-            earned_rewards[n][t] = reward
-    return np.array(selected_arms), np.array(earned_rewards)
-
-
 # 環境の最適値をどれくらい当てられたか割合で評価
-arms_eg, _ = sim(EpsilonGreedyAgent)
-arms_aeg, _ = sim(AnnealingEpsilonGreedyAgent)
-arms_as, _ = sim(AnnealingSoftmaxAgent)
+arms_eg, _ = sim(agent=EpsilonGreedyAgent, env=EnvBernoulli)
+arms_aeg, _ = sim(AnnealingEpsilonGreedyAgent, EnvBernoulli)
+arms_as, _ = sim(AnnealingSoftmaxAgent, EnvBernoulli)
 # N 回のシミュレーション結果を行として、行ごとにTrue かどうかをチェック.
 # t 回目にどれくらい正解しているか. t 回目の正解の平均を出す（t 回目のアクションの正解率を出す.）
-acc_eg = np.mean(arms_eg == Env.opt(), axis=0)
-acc_aeg = np.mean(arms_aeg == Env.opt(), axis=0)
-acc_as = np.mean(arms_as == Env.opt(), axis=0)
+acc_eg = np.mean(arms_eg == EnvBernoulli.opt(), axis=0)
+acc_aeg = np.mean(arms_aeg == EnvBernoulli.opt(), axis=0)
+acc_as = np.mean(arms_as == EnvBernoulli.opt(), axis=0)
 """
 np.mean(np.array([[1,2],[1,2]]), axis=1)
 >> array([1.5, 1.5])
